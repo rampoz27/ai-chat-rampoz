@@ -194,7 +194,7 @@ Aturan wajib:
 - Jangan gunakan markdown tebal seperti **teks**.
 - Jangan gunakan format citation seperti [cite: 1].
 - Jangan tulis link sumber di dalam jawaban utama.
-- Jawaban harus ringkas tapi rinci. 
+- Jawaban ringkas tapi rinci. 
 - Gunakan bahasa Indonesia yang natural untuk livechat.
 
 Pertanyaan user:
