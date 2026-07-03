@@ -185,7 +185,7 @@ ${question}
 Format jawaban wajib:
 Cara main permainan [nama permainan]:
 
-1. [Penjelasan singkat cara main]
+1. [Penjelasan singkat namun rinci tentang cara bermain permainannya]
 2. [Fitur penting, jika ada]
 3. [Jenis Bettingan yang ada]
 `;
