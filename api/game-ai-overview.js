@@ -1,5 +1,7 @@
+const FIREBASE_DB_URL = "https://bot-livechat-rampoz-default-rtdb.firebaseio.com";
+
 export default async function handler(req, res) {
-  // CORS untuk testing
+  // CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -25,8 +27,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Proteksi utama:
-    // AI Overview hanya boleh aktif jika ada frasa "cara main permainan".
     if (!isAllowedGameOverviewQuestion(question)) {
       return res.status(403).json({
         success: false,
@@ -70,7 +70,7 @@ export default async function handler(req, res) {
           ],
           generationConfig: {
             temperature: 0.2,
-            maxOutputTokens: 700
+            maxOutputTokens: 450
           }
         })
       }
@@ -88,20 +88,36 @@ export default async function handler(req, res) {
       });
     }
 
-    const answer = extractAnswer(data);
+    const rawAnswer = extractAnswer(data);
     const sources = extractGroundingSources(data);
 
-    if (!answer) {
+    if (!rawAnswer) {
       return res.status(500).json({
         success: false,
         message: "Gemini tidak mengembalikan jawaban."
       });
     }
 
+    const finalAnswer = formatAnswerWithSources(rawAnswer, sources);
+
+    let savedKnowledge = null;
+
+    try {
+      savedKnowledge = await saveLearnedKnowledge({
+        question,
+        answer: finalAnswer,
+        sources
+      });
+    } catch (saveError) {
+      console.error("Save learned knowledge error:", saveError);
+    }
+
     return res.status(200).json({
       success: true,
-      answer: formatAnswerWithSources(answer, sources),
-      sources
+      answer: finalAnswer,
+      sources,
+      saved: Boolean(savedKnowledge),
+      savedKnowledgeId: savedKnowledge?.id || null
     });
   } catch (error) {
     console.error(error);
@@ -113,6 +129,9 @@ export default async function handler(req, res) {
   }
 }
 
+/*********************************
+ * HELPER
+ *********************************/
 function normalizeText(text) {
   return String(text || "")
     .toLowerCase()
@@ -124,13 +143,12 @@ function normalizeText(text) {
 function isAllowedGameOverviewQuestion(question) {
   const text = normalizeText(question);
 
-  // Syarat wajib dari kamu:
-  // hanya boleh aktif ketika ada kata/frasa "cara main permainan".
+  // Syarat utama: wajib ada frasa ini
   if (!text.includes("cara main")) {
     return false;
   }
 
-  // Blokir topik sensitif/internal meskipun user menyisipkan frasa tersebut.
+  // Blokir topik internal
   const blockedKeywords = [
     "deposit",
     "depo",
@@ -176,18 +194,18 @@ Aturan wajib:
 - Jangan gunakan markdown tebal seperti **teks**.
 - Jangan gunakan format citation seperti [cite: 1].
 - Jangan tulis link sumber di dalam jawaban utama.
-- Jawaban harus ringkas tapi rinci. 
+- Jawaban harus pendek, maksimal 8 baris.
 - Gunakan bahasa Indonesia yang natural untuk livechat.
 
 Pertanyaan user:
 ${question}
 
 Format jawaban wajib:
-Cara main permainan [nama permainan]:
+Cara main [nama permainan]:
 
-1. [Penjelasan singkat namun rinci tentang cara bermain permainannya]
+1. [Penjelasan singkat cara main]
 2. [Fitur penting, jika ada]
-3. [Jenis Bettingan yang ada]
+3. Hasil permainan tetap bergantung pada keberuntungan dan aturan provider.
 `;
 }
 
@@ -214,19 +232,148 @@ function extractGroundingSources(data) {
       };
     })
     .filter(source => source.url)
-    .slice(0, 5);
+    .slice(0, 3);
+}
+
+function cleanAIAnswer(answer) {
+  return String(answer || "")
+    .replace(/\*\*/g, "")
+    .replace(/\[cite:\s*[^\]]+\]/gi, "")
+    .replace(/\[source:\s*[^\]]+\]/gi, "")
+    .replace(/Sumber:\s*[\s\S]*$/i, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function formatAnswerWithSources(answer, sources) {
+  const cleanAnswer = cleanAIAnswer(answer);
+
   if (!sources.length) {
-    return answer;
+    return cleanAnswer;
   }
 
-  const sourceText = sources
-    .map((source, index) => {
-      return `${index + 1}. ${source.title || source.url}\n${source.url}`;
-    })
-    .join("\n\n");
+  const sourceNames = sources
+    .map(source => source.title)
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(", ");
 
-  return `${answer}\n\nSumber:\n${sourceText}`;
+  if (!sourceNames) {
+    return cleanAnswer;
+  }
+
+  return `${cleanAnswer}\n\nReferensi web: ${sourceNames}`;
+}
+
+/*********************************
+ * FIREBASE LEARNED KNOWLEDGE
+ *********************************/
+function buildLearnedKeywords(question) {
+  const cleanQuestion = normalizeText(question);
+
+  const gameName = cleanQuestion
+    .replace("cara main", "")
+    .replace("cara bermain permainan", "")
+    .replace("cara main", "")
+    .replace("cara bermain", "")
+    .trim();
+
+  const keywords = [cleanQuestion];
+
+  if (gameName) {
+    keywords.push(`cara main ${gameName}`);
+    keywords.push(`cara bermain ${gameName}`);
+    keywords.push(`cara main ${gameName}`);
+    keywords.push(`cara bermain permainan ${gameName}`);
+    keywords.push(`permainan ${gameName}`);
+    keywords.push(gameName);
+  }
+
+  return [...new Set(keywords)].filter(Boolean);
+}
+
+function buildLearnedTitle(question) {
+  const cleanQuestion = normalizeText(question);
+
+  const gameName = cleanQuestion
+    .replace("cara main", "")
+    .replace("cara bermain permainan", "")
+    .replace("cara main", "")
+    .replace("cara bermain", "")
+    .trim();
+
+  if (!gameName) {
+    return "Cara Main";
+  }
+
+  return `Cara Main ${toTitleCase(gameName)}`;
+}
+
+function toTitleCase(text) {
+  return String(text || "")
+    .split(" ")
+    .filter(Boolean)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function buildSemanticText(question, answer) {
+  return normalizeText(`${question} ${answer}`)
+    .split(" ")
+    .filter(word => word.length >= 3)
+    .slice(0, 120)
+    .join(" ");
+}
+
+function buildSafeFirebaseKey(question) {
+  const base = normalizeText(question)
+    .replace("cara main", "")
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_]/g, "")
+    .slice(0, 60);
+
+  return `ai_cara_main_${base || Date.now()}`;
+}
+
+async function saveLearnedKnowledge({ question, answer, sources }) {
+  const now = Date.now();
+  const key = buildSafeFirebaseKey(question);
+
+  const payload = {
+    title: buildLearnedTitle(question),
+    keywords: buildLearnedKeywords(question),
+    semanticText: buildSemanticText(question, answer),
+    answer: cleanAIAnswer(answer),
+    detail: "",
+    claim: "",
+    source: "gemini_grounding",
+    question,
+    sources: sources || [],
+    status: "approved",
+    createdAt: now,
+    updatedAt: now
+  };
+
+  // Pakai PUT supaya pertanyaan sama tidak bikin data dobel terus.
+  const response = await fetch(`${FIREBASE_DB_URL}/ai_learned_knowledge/${key}.json`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error("Gagal menyimpan learned knowledge: " + text);
+  }
+
+  await response.json();
+
+  return {
+    id: key,
+    ...payload
+  };
 }
