@@ -196,6 +196,7 @@ Aturan wajib:
 - Jangan tulis link sumber di dalam jawaban utama.
 - Jawaban harus pendek, tapi rinci.
 - Gunakan bahasa Indonesia yang natural untuk livechat.
+- Apabila jawaban tidak memumpuni untuk memberikan fitur dan jenis bettingan, cukup berikan pengertiannya saja. 
 
 Pertanyaan user:
 ${question}
