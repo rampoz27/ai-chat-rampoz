@@ -30,7 +30,7 @@ export default async function handler(req, res) {
     if (!isAllowedGameOverviewQuestion(question)) {
       return res.status(403).json({
         success: false,
-        message: "AI Overview hanya aktif untuk pertanyaan yang mengandung 'cara main permainan'."
+        message: "AI Overview hanya aktif untuk pertanyaan yang mengandung 'cara main'."
       });
     }
 
