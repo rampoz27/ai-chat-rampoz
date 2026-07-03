@@ -187,7 +187,7 @@ Cara main permainan [nama permainan]:
 
 1. [Penjelasan singkat cara main]
 2. [Fitur penting, jika ada]
-3. Hasil permainan tetap bergantung pada keberuntungan dan aturan provider.
+3. [Jenis Bettingan yang ada]
 `;
 }
 
