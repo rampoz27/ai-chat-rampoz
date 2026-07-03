@@ -126,7 +126,7 @@ function isAllowedGameOverviewQuestion(question) {
 
   // Syarat wajib dari kamu:
   // hanya boleh aktif ketika ada kata/frasa "cara main permainan".
-  if (!text.includes("cara main permainan")) {
+  if (!text.includes("cara main")) {
     return false;
   }
 
